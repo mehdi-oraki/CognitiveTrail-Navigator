@@ -1,0 +1,13 @@
+data/
+tokens/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.csv
+*.log
+.venv/
+__pycache__/
+.python-version
+
+

@@ -1,0 +1,2 @@
+# Stdlib-only for now; add packages here when enabling Gmail OAuth or richer UI.
+
