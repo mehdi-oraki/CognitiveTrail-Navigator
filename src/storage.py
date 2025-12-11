@@ -234,15 +234,17 @@ class LocalStore:
         with self.html_path.open("w", encoding="utf-8") as handle:
             handle.write(html_doc)
 
-    def _aggregate_domains(self) -> tuple[Counter, Counter]:
-        """Return counters for subdomains (full host) and TLDs from CSV."""
+    def _aggregate_domains(self) -> tuple[Counter, Counter, dict[str, Counter], Counter]:
+        """Return counters for subdomains (full host), TLDs, per-day-of-week usage, and total day-of-week counts."""
         if not self.csv_path.exists():
-            return Counter(), Counter()
+            return Counter(), Counter(), {}, Counter()
 
         with self.csv_path.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
             subdomains: Counter = Counter()
             tlds: Counter = Counter()
+            dow_by_subdomain: dict[str, Counter] = {}
+            dow_total: Counter = Counter()
             for row in reader:
                 url = row.get("url") or ""
                 host = urlparse(url).hostname or ""
@@ -254,11 +256,22 @@ class LocalStore:
                     tlds[parts[-1]] += 1
                 elif parts:
                     tlds[parts[0]] += 1
-        return subdomains, tlds
+                # Day-of-week aggregation
+                visit_raw = row.get("visit_time") or ""
+                try:
+                    ts = dt.datetime.fromisoformat(visit_raw)
+                    dow = ts.weekday()  # 0=Mon
+                except (ValueError, TypeError):
+                    continue
+                if host not in dow_by_subdomain:
+                    dow_by_subdomain[host] = Counter()
+                dow_by_subdomain[host][dow] += 1
+                dow_total[dow] += 1
+        return subdomains, tlds, dow_by_subdomain, dow_total
 
     def _write_analysis_html(self) -> None:
-        """Render a chart view summarizing frequent subdomains and TLDs."""
-        subdomains, tlds = self._aggregate_domains()
+        """Render a chart view summarizing frequent subdomains, TLDs, and day-of-week usage."""
+        subdomains, tlds, dow_by_subdomain, dow_total = self._aggregate_domains()
 
         # Take top 20 for readability
         top_subdomains = subdomains.most_common(20)
@@ -268,6 +281,50 @@ class LocalStore:
         sub_counts = [count for _, count in top_subdomains]
         tld_labels = [label for label, _ in top_tlds]
         tld_counts = [count for _, count in top_tlds]
+
+        # Day-of-week dataset for top subdomains (limit to top 8 for readability)
+        dow_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        dow_subdomains = sub_labels[:8]
+        dow_datasets = []
+        palette = [
+            "#4F46E5",
+            "#0EA5E9",
+            "#10B981",
+            "#F59E0B",
+            "#EF4444",
+            "#8B5CF6",
+            "#EC4899",
+            "#06B6D4",
+        ]
+        for idx, sub in enumerate(dow_subdomains):
+            counts = [dow_by_subdomain.get(sub, Counter()).get(i, 0) for i in range(7)]
+            dow_datasets.append(
+                {
+                    "label": sub,
+                    "data": counts,
+                    "backgroundColor": palette[idx % len(palette)],
+                    "stack": "dow",
+                }
+            )
+        other_counts = [
+            sum(
+                counts.get(i, 0)
+                for host, counts in dow_by_subdomain.items()
+                if host not in dow_subdomains
+            )
+            for i in range(7)
+        ]
+        if any(other_counts):
+            dow_datasets.append(
+                {
+                    "label": "Other",
+                    "data": other_counts,
+                    "backgroundColor": "#9CA3AF",
+                    "stack": "dow",
+                }
+            )
+
+        total_dow_counts = [dow_total.get(i, 0) for i in range(7)]
 
         html_doc = f"""<!DOCTYPE html>
 <html lang="en">
@@ -306,12 +363,23 @@ class LocalStore:
     <h2>Top TLDs (Top 20)</h2>
     <canvas id="tldChart" height="220"></canvas>
   </div>
+  <div class="chart-container">
+    <h2>Top Subdomains by Day of Week (Top 8 + Other)</h2>
+    <canvas id="dowChart" height="280"></canvas>
+  </div>
+  <div class="chart-container">
+    <h2>All Visits by Day of Week</h2>
+    <canvas id="dowTotalChart" height="220"></canvas>
+  </div>
 
   <script>
     const subLabels = {json.dumps(sub_labels)};
     const subCounts = {json.dumps(sub_counts)};
     const tldLabels = {json.dumps(tld_labels)};
     const tldCounts = {json.dumps(tld_counts)};
+    const dowLabels = {json.dumps(dow_labels)};
+    const dowDatasets = {json.dumps(dow_datasets)};
+    const dowTotals = {json.dumps(total_dow_counts)};
 
     const barOptions = {{
       indexAxis: 'y',
@@ -349,6 +417,48 @@ class LocalStore:
         }}],
       }},
       options: barOptions,
+    }});
+
+    new Chart(document.getElementById('dowChart'), {{
+      type: 'bar',
+      data: {{
+        labels: dowLabels,
+        datasets: dowDatasets,
+      }},
+      options: {{
+        responsive: true,
+        plugins: {{
+          legend: {{ position: 'bottom' }},
+          tooltip: {{ mode: 'index', intersect: false }},
+        }},
+        scales: {{
+          x: {{ stacked: true }},
+          y: {{ stacked: true, beginAtZero: true, title: {{ display: true, text: 'Visits' }} }},
+        }},
+      }},
+    }});
+
+    new Chart(document.getElementById('dowTotalChart'), {{
+      type: 'bar',
+      data: {{
+        labels: dowLabels,
+        datasets: [{{
+          label: 'Visits',
+          data: dowTotals,
+          backgroundColor: '#6366F1',
+        }}],
+      }},
+      options: {{
+        responsive: true,
+        plugins: {{
+          legend: {{ display: false }},
+          tooltip: {{ mode: 'index', intersect: false }},
+        }},
+        scales: {{
+          x: {{ beginAtZero: true }},
+          y: {{ beginAtZero: true, title: {{ display: true, text: 'Visits' }} }},
+        }},
+      }},
     }});
   </script>
 </body>
