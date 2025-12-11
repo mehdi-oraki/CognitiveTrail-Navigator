@@ -50,6 +50,7 @@ CognitiveTrail Navigator is a local-first assistant scaffolded as a LangGraph-st
 - SQLite: `data/ctn.sqlite` with `browser_history` and `audit_log` tables.
 - CSV: `data/browser_history.csv` (append-only export of ingested rows).
 - HTML: `data/browser_history.html` (auto-generated view with clickable URLs after each run; fixed column widths with ellipsis for long URLs).
+- Analysis: `data/analyze.html` (charts of top subdomains and TLDs from the CSV).
 - Audit: `data/audit.log` records timestamps, events, and details.
 - See `data/README.md` for folder-specific notes.
 

@@ -7,6 +7,9 @@ from typing import Iterable, List, Optional
 import csv
 import datetime as dt
 import html as html_lib
+import json
+from collections import Counter
+from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -30,11 +33,13 @@ class LocalStore:
         db_path: Path | None = None,
         csv_path: Path | None = None,
         html_path: Path | None = None,
+        analysis_path: Path | None = None,
     ) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path or DATA_DIR / "ctn.sqlite"
         self.csv_path = csv_path or DATA_DIR / "browser_history.csv"
         self.html_path = html_path or DATA_DIR / "browser_history.html"
+        self.analysis_path = analysis_path or DATA_DIR / "analyze.html"
         self._ensure_db()
 
     def _ensure_db(self) -> None:
@@ -93,6 +98,7 @@ class LocalStore:
 
         self._append_csv(rows)
         self._write_html()
+        self._write_analysis_html()
         return len(rows)
 
     def _append_csv(self, rows: List[BrowserEntry]) -> None:
@@ -226,6 +232,130 @@ class LocalStore:
 """
 
         with self.html_path.open("w", encoding="utf-8") as handle:
+            handle.write(html_doc)
+
+    def _aggregate_domains(self) -> tuple[Counter, Counter]:
+        """Return counters for subdomains (full host) and TLDs from CSV."""
+        if not self.csv_path.exists():
+            return Counter(), Counter()
+
+        with self.csv_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            subdomains: Counter = Counter()
+            tlds: Counter = Counter()
+            for row in reader:
+                url = row.get("url") or ""
+                host = urlparse(url).hostname or ""
+                if not host:
+                    continue
+                subdomains[host] += 1
+                parts = host.split(".")
+                if len(parts) >= 2:
+                    tlds[parts[-1]] += 1
+                elif parts:
+                    tlds[parts[0]] += 1
+        return subdomains, tlds
+
+    def _write_analysis_html(self) -> None:
+        """Render a chart view summarizing frequent subdomains and TLDs."""
+        subdomains, tlds = self._aggregate_domains()
+
+        # Take top 20 for readability
+        top_subdomains = subdomains.most_common(20)
+        top_tlds = tlds.most_common(20)
+
+        sub_labels = [label for label, _ in top_subdomains]
+        sub_counts = [count for _, count in top_subdomains]
+        tld_labels = [label for label, _ in top_tlds]
+        tld_counts = [count for _, count in top_tlds]
+
+        html_doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Domain Usage Analysis</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      margin: 24px;
+      background: #f7f7f7;
+      color: #111;
+    }}
+    h1, h2 {{
+      text-align: center;
+    }}
+    .chart-container {{
+      width: 100%;
+      max-width: 960px;
+      margin: 24px auto;
+      background: #fff;
+      padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }}
+  </style>
+</head>
+<body>
+  <h1>Browser History Analysis</h1>
+  <div class="chart-container">
+    <h2>Top Subdomains (Top 20)</h2>
+    <canvas id="subdomainChart" height="220"></canvas>
+  </div>
+  <div class="chart-container">
+    <h2>Top TLDs (Top 20)</h2>
+    <canvas id="tldChart" height="220"></canvas>
+  </div>
+
+  <script>
+    const subLabels = {json.dumps(sub_labels)};
+    const subCounts = {json.dumps(sub_counts)};
+    const tldLabels = {json.dumps(tld_labels)};
+    const tldCounts = {json.dumps(tld_counts)};
+
+    const barOptions = {{
+      indexAxis: 'y',
+      plugins: {{
+        legend: {{ display: false }},
+        tooltip: {{ enabled: true }},
+      }},
+      scales: {{
+        x: {{ beginAtZero: true, title: {{ display: true, text: 'Visits' }} }},
+        y: {{ title: {{ display: true, text: 'Host / TLD' }} }}
+      }}
+    }};
+
+    new Chart(document.getElementById('subdomainChart'), {{
+      type: 'bar',
+      data: {{
+        labels: subLabels,
+        datasets: [{{
+          label: 'Visits',
+          data: subCounts,
+          backgroundColor: '#4F46E5',
+        }}],
+      }},
+      options: barOptions,
+    }});
+
+    new Chart(document.getElementById('tldChart'), {{
+      type: 'bar',
+      data: {{
+        labels: tldLabels,
+        datasets: [{{
+          label: 'Visits',
+          data: tldCounts,
+          backgroundColor: '#0EA5E9',
+        }}],
+      }},
+      options: barOptions,
+    }});
+  </script>
+</body>
+</html>
+"""
+
+        with self.analysis_path.open("w", encoding="utf-8") as handle:
             handle.write(html_doc)
 
 
