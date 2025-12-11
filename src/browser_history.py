@@ -66,7 +66,7 @@ def _resolve_local_ip() -> str | None:
 
 
 def fetch_browser_history(
-    browsers: Iterable[str], since: dt.datetime | None = None, max_rows: int = 1000
+    browsers: Iterable[str], since: dt.datetime | None = None, max_rows: int = 10000
 ) -> List[BrowserEntry]:
     entries: List[BrowserEntry] = []
     normalized = {b.lower() for b in browsers}
