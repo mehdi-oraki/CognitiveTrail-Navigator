@@ -27,7 +27,7 @@ This directory contains the Python source for the CognitiveTrail Navigator CLI p
 # 5. Usage Notes
 - Run `python -m src.cli fetch-history` to launch consent-first browser history ingestion.
 - The CLI always asks for a data limit (`today`, `last week`, `last month`, `1 year`) and logs your choice.
-- Outputs (SQLite, CSV, audit log) live under `data/`.
+- Outputs (SQLite, CSV, HTML snapshot, audit log) live under `data/`.
 
 # 6. Extending
 - Add new agents (e.g., Gmail OAuth, filesystem metadata) as additional pipeline steps in `build_pipeline()`.

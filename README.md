@@ -37,7 +37,8 @@ CognitiveTrail Navigator is a local-first assistant scaffolded as a LangGraph-st
 - Run: `python -m src.cli fetch-history --browsers chrome firefox edge`.
 - The CLI always prompts for a data limit (`today`, `last week`, `last month`, or `1 year`). Supplying `--time-window` only sets the default shown in the prompt.
 - Grant consent when asked; declining skips that data source.
-- On completion, you will see `Data fetch complete — N entries saved.` with rows persisted to SQLite and CSV.
+- On completion, you will see `Data fetch complete — N entries saved.` with rows persisted to SQLite, CSV, and an HTML snapshot under `data/browser_history.html`.
+- IP column in the HTML/CSV is filled with a best-effort local interface IP (no external calls).
 
 # 7. Consent & Safety
 - Explicit per-source consent is required before any data read.
@@ -48,6 +49,7 @@ CognitiveTrail Navigator is a local-first assistant scaffolded as a LangGraph-st
 # 8. Data & Storage Layout
 - SQLite: `data/ctn.sqlite` with `browser_history` and `audit_log` tables.
 - CSV: `data/browser_history.csv` (append-only export of ingested rows).
+- HTML: `data/browser_history.html` (auto-generated view with clickable URLs after each run; fixed column widths with ellipsis for long URLs).
 - Audit: `data/audit.log` records timestamps, events, and details.
 - See `data/README.md` for folder-specific notes.
 
@@ -58,7 +60,7 @@ CognitiveTrail Navigator is a local-first assistant scaffolded as a LangGraph-st
 
 # 10. Troubleshooting
 - If history files are locked, ensure the browser is closed; the CLI already copies to temp files.
-- WSL/Windows paths may vary; adjust `KNOWN_HISTORY_PATHS` in `src/browser_history.py` if no results are returned.
+- WSL/Windows paths may vary; Chrome/Edge profiles are auto-scanned but you can add paths in `KNOWN_HISTORY_PATHS` in `src/browser_history.py` if no results are returned.
 - Missing data often means consent was declined; re-run and approve.
 
 # 11. Roadmap

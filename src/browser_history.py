@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 from urllib.parse import urlparse, parse_qs
+import socket
 
 from .storage import BrowserEntry
 
@@ -49,6 +50,21 @@ KNOWN_HISTORY_PATHS: Dict[str, Tuple[Path, ...]] = {
 }
 
 
+def _resolve_local_ip() -> str | None:
+    """Best-effort local IP detection without external calls."""
+    try:
+        # Uses system routing table to pick the primary interface.
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        sock.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except OSError:
+        pass
+    return None
+
+
 def fetch_browser_history(
     browsers: Iterable[str], since: dt.datetime | None = None, max_rows: int = 1000
 ) -> List[BrowserEntry]:
@@ -64,6 +80,43 @@ def fetch_browser_history(
     return entries[:max_rows] if max_rows else entries
 
 
+def _chromium_profile_candidates(source: str) -> Tuple[Path, ...]:
+    """Return possible History DB locations for Chromium-based browsers."""
+    if source == "chrome":
+        bases = [
+            Path.home() / ".config" / "google-chrome",
+            Path.home() / ".config" / "chromium",
+            (_win_localappdata() / "Google/Chrome/User Data") if _win_localappdata() else None,
+            Path("/mnt/c/Users/Lenovo/AppData/Local/Google/Chrome/User Data"),
+        ]
+    elif source == "edge":
+        bases = [
+            Path.home() / ".config" / "microsoft-edge",
+            (_win_localappdata() / "Microsoft/Edge/User Data") if _win_localappdata() else None,
+            Path("/mnt/c/Users/Lenovo/AppData/Local/Microsoft/Edge/User Data"),
+        ]
+    else:
+        return ()
+
+    profile_names = ("Default", "Profile 1", "Profile 2", "Profile 3")
+    candidates: List[Path] = []
+    for base in bases:
+        if not base or not base.exists():
+            continue
+        for name in profile_names:
+            candidate = base / name / "History"
+            if candidate.exists():
+                candidates.append(candidate)
+        # Also scan any other profile directories that contain a History file.
+        for subdir in base.iterdir():
+            if not subdir.is_dir():
+                continue
+            history_file = subdir / "History"
+            if history_file.exists() and history_file not in candidates:
+                candidates.append(history_file)
+    return tuple(candidates)
+
+
 def _read_chromium_like(
     source: str, since: dt.datetime | None, max_rows: int
 ) -> List[BrowserEntry]:
@@ -71,6 +124,13 @@ def _read_chromium_like(
     for db_path in paths:
         if db_path.exists():
             return _read_chromium_db(source, db_path, since, max_rows)
+
+    # Fallback: scan common profile directories to find non-default profiles.
+    dynamic_paths = _chromium_profile_candidates(source)
+    for db_path in dynamic_paths:
+        if db_path.exists():
+            return _read_chromium_db(source, db_path, since, max_rows)
+
     return []
 
 
@@ -78,6 +138,7 @@ def _read_chromium_db(
     source: str, db_path: Path, since: dt.datetime | None, max_rows: int
 ) -> List[BrowserEntry]:
     temp_path = Path(tempfile.mkstemp(suffix=".db")[1])
+    ip = _resolve_local_ip()
     try:
         shutil.copy2(db_path, temp_path)
         where_clause = ""
@@ -105,7 +166,7 @@ def _read_chromium_db(
                     title=row[1],
                     visit_time=_chromium_ts_to_dt(row[2]),
                     query=_extract_query(row[0]),
-                    ip=None,
+                    ip=ip,
                 )
                 for row in rows
             ]
@@ -134,6 +195,8 @@ def _read_firefox(
         for line in profiles_ini.read_text().splitlines()
         if line.lower().startswith("path=")
     ]
+
+    ip = _resolve_local_ip()
 
     for profile in profile_dirs:
         # Prefer Linux-style path; fall back to Windows profile location.
@@ -175,7 +238,7 @@ def _read_firefox(
                         title=row[1],
                         visit_time=_firefox_ts_to_dt(row[2]),
                         query=_extract_query(row[0]),
-                        ip=None,
+                        ip=ip,
                     )
                     for row in rows
                 ]
