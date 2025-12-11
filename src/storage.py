@@ -273,19 +273,28 @@ class LocalStore:
         """Render a chart view summarizing frequent subdomains, TLDs, and day-of-week usage."""
         subdomains, tlds, dow_by_subdomain, dow_total = self._aggregate_domains()
 
-        # Take top 20 for readability
-        top_subdomains = subdomains.most_common(20)
-        top_tlds = tlds.most_common(20)
+        # Get all subdomains sorted by count (for selection UI)
+        all_subdomains = subdomains.most_common()
+        sub_labels_all = [label for label, _ in all_subdomains]
+        sub_counts_all = [count for _, count in all_subdomains]
 
+        # Take top 20 for initial display
+        top_subdomains = subdomains.most_common(20)
         sub_labels = [label for label, _ in top_subdomains]
         sub_counts = [count for _, count in top_subdomains]
-        tld_labels = [label for label, _ in top_tlds]
-        tld_counts = [count for _, count in top_tlds]
+        tld_labels = [label for label, _ in tlds.most_common(20)]
+        tld_counts = [count for _, count in tlds.most_common(20)]
 
-        # Day-of-week dataset for top subdomains (limit to top 8 for readability)
+        # Prepare full day-of-week data for all subdomains
         dow_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        dow_subdomains = sub_labels[:8]
-        dow_datasets = []
+        # Store all subdomain day-of-week data
+        all_dow_data = {}
+        for sub in sub_labels_all:
+            counts = [dow_by_subdomain.get(sub, Counter()).get(i, 0) for i in range(7)]
+            all_dow_data[sub] = counts
+
+        # Initial day-of-week dataset (top 8)
+        dow_subdomains_initial = sub_labels[:8]
         palette = [
             "#4F46E5",
             "#0EA5E9",
@@ -295,36 +304,23 @@ class LocalStore:
             "#8B5CF6",
             "#EC4899",
             "#06B6D4",
+            "#14B8A6",
+            "#F97316",
+            "#84CC16",
+            "#A855F7",
+            "#E11D48",
+            "#3B82F6",
+            "#22C55E",
+            "#FBBF24",
         ]
-        for idx, sub in enumerate(dow_subdomains):
-            counts = [dow_by_subdomain.get(sub, Counter()).get(i, 0) for i in range(7)]
-            dow_datasets.append(
-                {
-                    "label": sub,
-                    "data": counts,
-                    "backgroundColor": palette[idx % len(palette)],
-                    "stack": "dow",
-                }
-            )
-        other_counts = [
-            sum(
-                counts.get(i, 0)
-                for host, counts in dow_by_subdomain.items()
-                if host not in dow_subdomains
-            )
-            for i in range(7)
-        ]
-        if any(other_counts):
-            dow_datasets.append(
-                {
-                    "label": "Other",
-                    "data": other_counts,
-                    "backgroundColor": "#9CA3AF",
-                    "stack": "dow",
-                }
-            )
 
         total_dow_counts = [dow_total.get(i, 0) for i in range(7)]
+
+        # Generate checkbox HTML for subdomain selection
+        checkbox_html = ""
+        for idx, (sub, count) in enumerate(all_subdomains[:50]):  # Show top 50 in selector
+            checked = "checked" if sub in sub_labels[:8] else ""
+            checkbox_html += f'<label style="display: inline-block; margin: 4px 8px; min-width: 200px;"><input type="checkbox" class="subdomain-checkbox" value="{html_lib.escape(sub)}" {checked}> {html_lib.escape(sub)} ({count})</label>'
 
         html_doc = f"""<!DOCTYPE html>
 <html lang="en">
@@ -351,12 +347,63 @@ class LocalStore:
       padding: 16px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     }}
+    .selector-container {{
+      width: 100%;
+      max-width: 960px;
+      margin: 24px auto;
+      background: #fff;
+      padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }}
+    .selector-controls {{
+      margin-bottom: 12px;
+      text-align: center;
+    }}
+    .selector-controls button {{
+      margin: 0 8px;
+      padding: 6px 16px;
+      background: #4F46E5;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }}
+    .selector-controls button:hover {{
+      background: #4338CA;
+    }}
+    .checkbox-container {{
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      padding: 12px;
+      border-radius: 4px;
+    }}
+    .checkbox-container label {{
+      display: block;
+      padding: 4px 0;
+      cursor: pointer;
+    }}
+    .checkbox-container label:hover {{
+      background: #f5f5f5;
+    }}
   </style>
 </head>
 <body>
   <h1>Browser History Analysis</h1>
+  <div class="selector-container">
+    <h2>Select Subdomains to Display</h2>
+    <div class="selector-controls">
+      <button onclick="selectAll()">Select All</button>
+      <button onclick="deselectAll()">Deselect All</button>
+      <button onclick="selectTop8()">Select Top 8</button>
+    </div>
+    <div class="checkbox-container">
+      {checkbox_html}
+    </div>
+  </div>
   <div class="chart-container">
-    <h2>Top Subdomains (Top 20)</h2>
+    <h2>Selected Subdomains</h2>
     <canvas id="subdomainChart" height="220"></canvas>
   </div>
   <div class="chart-container">
@@ -364,7 +411,7 @@ class LocalStore:
     <canvas id="tldChart" height="220"></canvas>
   </div>
   <div class="chart-container">
-    <h2>Top Subdomains by Day of Week (Top 8 + Other)</h2>
+    <h2>Selected Subdomains by Day of Week</h2>
     <canvas id="dowChart" height="280"></canvas>
   </div>
   <div class="chart-container">
@@ -373,14 +420,109 @@ class LocalStore:
   </div>
 
   <script>
-    const subLabels = {json.dumps(sub_labels)};
-    const subCounts = {json.dumps(sub_counts)};
+    // Store all data
+    const allSubLabels = {json.dumps(sub_labels_all)};
+    const allSubCounts = {json.dumps(sub_counts_all)};
+    const allDowData = {json.dumps(all_dow_data)};
     const tldLabels = {json.dumps(tld_labels)};
     const tldCounts = {json.dumps(tld_counts)};
     const dowLabels = {json.dumps(dow_labels)};
-    const dowDatasets = {json.dumps(dow_datasets)};
     const dowTotals = {json.dumps(total_dow_counts)};
+    
+    const palette = {json.dumps(palette)};
+    
+    // Chart instances
+    let subdomainChart = null;
+    let dowChart = null;
 
+    // Get selected subdomains
+    function getSelectedSubdomains() {{
+      const checkboxes = document.querySelectorAll('.subdomain-checkbox:checked');
+      return Array.from(checkboxes).map(cb => cb.value);
+    }}
+    
+    // Update charts based on selection
+    function updateCharts() {{
+      const selected = getSelectedSubdomains();
+      
+      // Update subdomain chart
+      const filteredLabels = [];
+      const filteredCounts = [];
+      selected.forEach(sub => {{
+        const idx = allSubLabels.indexOf(sub);
+        if (idx !== -1) {{
+          filteredLabels.push(sub);
+          filteredCounts.push(allSubCounts[idx]);
+        }}
+      }});
+      
+      if (subdomainChart) {{
+        subdomainChart.data.labels = filteredLabels;
+        subdomainChart.data.datasets[0].data = filteredCounts;
+        subdomainChart.update();
+      }}
+      
+      // Update day-of-week chart
+      const dowDatasets = [];
+      selected.forEach((sub, idx) => {{
+        if (allDowData[sub]) {{
+          dowDatasets.push({{
+            label: sub,
+            data: allDowData[sub],
+            backgroundColor: palette[idx % palette.length],
+            stack: 'dow',
+          }});
+        }}
+      }});
+      
+      // Calculate "Other" counts
+      const otherCounts = [0, 0, 0, 0, 0, 0, 0];
+      allSubLabels.forEach(sub => {{
+        if (!selected.includes(sub) && allDowData[sub]) {{
+          for (let i = 0; i < 7; i++) {{
+            otherCounts[i] += allDowData[sub][i];
+          }}
+        }}
+      }});
+      
+      if (otherCounts.some(x => x > 0)) {{
+        dowDatasets.push({{
+          label: 'Other',
+          data: otherCounts,
+          backgroundColor: '#9CA3AF',
+          stack: 'dow',
+        }});
+      }}
+      
+      if (dowChart) {{
+        dowChart.data.datasets = dowDatasets;
+        dowChart.update();
+      }}
+    }}
+    
+    // Selection helper functions
+    function selectAll() {{
+      document.querySelectorAll('.subdomain-checkbox').forEach(cb => cb.checked = true);
+      updateCharts();
+    }}
+    
+    function deselectAll() {{
+      document.querySelectorAll('.subdomain-checkbox').forEach(cb => cb.checked = false);
+      updateCharts();
+    }}
+    
+    function selectTop8() {{
+      deselectAll();
+      const top8 = allSubLabels.slice(0, 8);
+      document.querySelectorAll('.subdomain-checkbox').forEach(cb => {{
+        if (top8.includes(cb.value)) {{
+          cb.checked = true;
+        }}
+      }});
+      updateCharts();
+    }}
+    
+    // Initialize charts
     const barOptions = {{
       indexAxis: 'y',
       plugins: {{
@@ -393,13 +535,13 @@ class LocalStore:
       }}
     }};
 
-    new Chart(document.getElementById('subdomainChart'), {{
+    subdomainChart = new Chart(document.getElementById('subdomainChart'), {{
       type: 'bar',
       data: {{
-        labels: subLabels,
+        labels: {json.dumps(sub_labels[:8])},
         datasets: [{{
           label: 'Visits',
-          data: subCounts,
+          data: {json.dumps(sub_counts[:8])},
           backgroundColor: '#4F46E5',
         }}],
       }},
@@ -419,11 +561,11 @@ class LocalStore:
       options: barOptions,
     }});
 
-    new Chart(document.getElementById('dowChart'), {{
+    dowChart = new Chart(document.getElementById('dowChart'), {{
       type: 'bar',
       data: {{
         labels: dowLabels,
-        datasets: dowDatasets,
+        datasets: [],
       }},
       options: {{
         responsive: true,
@@ -459,6 +601,15 @@ class LocalStore:
           y: {{ beginAtZero: true, title: {{ display: true, text: 'Visits' }} }},
         }},
       }},
+    }});
+    
+    // Add event listeners to checkboxes
+    document.addEventListener('DOMContentLoaded', function() {{
+      document.querySelectorAll('.subdomain-checkbox').forEach(cb => {{
+        cb.addEventListener('change', updateCharts);
+      }});
+      // Initial update
+      updateCharts();
     }});
   </script>
 </body>
