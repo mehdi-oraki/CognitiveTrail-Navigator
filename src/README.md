@@ -1,3 +1,20 @@
+<h1 align="center">CognitiveTrail Navigator Source</h1>
+
+# 1. Purpose
+This directory contains the Python source for the CognitiveTrail Navigator CLI pipeline, including consent handling, ingestion agents, storage utilities, and command-line entrypoints.
+
+# 2. File Guide
+- `cli.py`: CLI entrypoint; prompts for data limit and runs the ingestion pipeline.
+- `agents.py`: Agent context, pipeline assembly, and time-window resolution helpers.
+- `browser_history.py`: Read-only browser history extractors for Chromium-based browsers and Firefox.
+- `storage.py`: Local SQLite/CSV persistence and audit logging primitives.
+- `consent.py`: User consent collection utilities (prompt-driven).
+- `audit.py`: Placeholder hook for future audit enhancements.
+- `__init__.py`: Package marker.
+
+# 3. Usage Notes
+- Run `python -m src.cli fetch-history` to launch the consent-first browser history ingest. The CLI will ask you to select a data limit (`today`, `last week`, `last month`, `1 year`) before collecting entries.
+- All outputs (SQLite DB, CSV, logs) are written under the top-level `data/` directory.
 <h1 align="center">Source Modules</h1>
 
 # 1. Contents

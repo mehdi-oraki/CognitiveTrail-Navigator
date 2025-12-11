@@ -49,40 +49,55 @@ KNOWN_HISTORY_PATHS: Dict[str, Tuple[Path, ...]] = {
 }
 
 
-def fetch_browser_history(browsers: Iterable[str], limit: int = 100) -> List[BrowserEntry]:
+def fetch_browser_history(
+    browsers: Iterable[str], since: dt.datetime | None = None, max_rows: int = 1000
+) -> List[BrowserEntry]:
     entries: List[BrowserEntry] = []
     normalized = {b.lower() for b in browsers}
     if "chrome" in normalized:
-        entries.extend(_read_chromium_like("chrome", limit))
+        entries.extend(_read_chromium_like("chrome", since, max_rows))
     if "edge" in normalized:
-        entries.extend(_read_chromium_like("edge", limit))
+        entries.extend(_read_chromium_like("edge", since, max_rows))
     if "firefox" in normalized:
-        entries.extend(_read_firefox(limit))
-    return entries[:limit] if limit else entries
+        entries.extend(_read_firefox(since, max_rows))
+    entries.sort(key=lambda entry: entry.visit_time, reverse=True)
+    return entries[:max_rows] if max_rows else entries
 
 
-def _read_chromium_like(source: str, limit: int) -> List[BrowserEntry]:
+def _read_chromium_like(
+    source: str, since: dt.datetime | None, max_rows: int
+) -> List[BrowserEntry]:
     paths = KNOWN_HISTORY_PATHS.get(source, ())
     for db_path in paths:
         if db_path.exists():
-            return _read_chromium_db(source, db_path, limit)
+            return _read_chromium_db(source, db_path, since, max_rows)
     return []
 
 
-def _read_chromium_db(source: str, db_path: Path, limit: int) -> List[BrowserEntry]:
+def _read_chromium_db(
+    source: str, db_path: Path, since: dt.datetime | None, max_rows: int
+) -> List[BrowserEntry]:
     temp_path = Path(tempfile.mkstemp(suffix=".db")[1])
     try:
         shutil.copy2(db_path, temp_path)
-        query = """
+        where_clause = ""
+        params: Tuple[object, ...]
+        if since:
+            where_clause = "WHERE visits.visit_time >= ?"
+            params = (_chromium_dt_to_ts(since), max_rows)
+        else:
+            params = (max_rows,)
+        query = f"""
             SELECT urls.url, urls.title, visits.visit_time
             FROM urls
             JOIN visits ON urls.id = visits.url
+            {where_clause}
             ORDER BY visits.visit_time DESC
             LIMIT ?
         """
         with sqlite3.connect(f"file:{temp_path}?mode=ro", uri=True) as conn:
             cur = conn.cursor()
-            rows = cur.execute(query, (limit,)).fetchall()
+            rows = cur.execute(query, params).fetchall()
             return [
                 BrowserEntry(
                     source=source,
@@ -103,7 +118,9 @@ def _read_chromium_db(source: str, db_path: Path, limit: int) -> List[BrowserEnt
             pass
 
 
-def _read_firefox(limit: int) -> List[BrowserEntry]:
+def _read_firefox(
+    since: dt.datetime | None, max_rows: int
+) -> List[BrowserEntry]:
     profiles_ini = Path.home() / ".mozilla" / "firefox" / "profiles.ini"
     if not profiles_ini.exists():
         win_profiles = (_win_appdata() / "Mozilla/Firefox/profiles.ini") if _win_appdata() else None
@@ -133,16 +150,24 @@ def _read_firefox(limit: int) -> List[BrowserEntry]:
         temp_path = Path(tempfile.mkstemp(suffix=".db")[1])
         try:
             shutil.copy2(db_path, temp_path)
-            query = """
+            where_clause = ""
+            params: Tuple[object, ...]
+            if since:
+                where_clause = "WHERE moz_historyvisits.visit_date >= ?"
+                params = (_firefox_dt_to_ts(since), max_rows)
+            else:
+                params = (max_rows,)
+            query = f"""
                 SELECT moz_places.url, moz_places.title, moz_historyvisits.visit_date
                 FROM moz_places
                 JOIN moz_historyvisits ON moz_places.id = moz_historyvisits.place_id
+                {where_clause}
                 ORDER BY moz_historyvisits.visit_date DESC
                 LIMIT ?
             """
             with sqlite3.connect(f"file:{temp_path}?mode=ro", uri=True) as conn:
                 cur = conn.cursor()
-                rows = cur.execute(query, (limit,)).fetchall()
+                rows = cur.execute(query, params).fetchall()
                 return [
                     BrowserEntry(
                         source="firefox",
@@ -170,9 +195,19 @@ def _chromium_ts_to_dt(value: int) -> dt.datetime:
     return epoch_start + dt.timedelta(microseconds=value)
 
 
+def _chromium_dt_to_ts(value: dt.datetime) -> int:
+    epoch_start = dt.datetime(1601, 1, 1)
+    delta = value - epoch_start
+    return int(delta.total_seconds() * 1_000_000)
+
+
 def _firefox_ts_to_dt(value: int) -> dt.datetime:
     # Firefox uses microseconds since Unix epoch
     return dt.datetime.utcfromtimestamp(value / 1_000_000)
+
+
+def _firefox_dt_to_ts(value: dt.datetime) -> int:
+    return int(value.timestamp() * 1_000_000)
 
 
 def _extract_query(url: str) -> str | None:

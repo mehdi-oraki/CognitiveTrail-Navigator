@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List
 
@@ -7,10 +8,26 @@ from . import consent
 from .browser_history import fetch_browser_history
 from .storage import AuditLogger, BrowserEntry, LocalStore
 
+TIME_WINDOWS = ["today", "last week", "last month", "1 year"]
+
+
+def resolve_window_start(window: str) -> dt.datetime:
+    now = dt.datetime.utcnow()
+    if window == "today":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if window == "last week":
+        return now - dt.timedelta(days=7)
+    if window == "last month":
+        return now - dt.timedelta(days=30)
+    if window == "1 year":
+        return now - dt.timedelta(days=365)
+    return now
+
 
 @dataclass
 class AgentContext:
-    limit: int
+    time_window: str
+    since: dt.datetime
     browsers: Iterable[str]
     audit: AuditLogger
     store: LocalStore
@@ -27,7 +44,7 @@ def consent_agent(ctx: AgentContext) -> AgentContext:
 def ingest_agent(ctx: AgentContext) -> AgentContext:
     if ctx.consents.get("browser_history"):
         ctx.audit.log("ingest_start", "browser_history")
-        ctx.history = fetch_browser_history(ctx.browsers, ctx.limit)
+        ctx.history = fetch_browser_history(ctx.browsers, since=ctx.since)
         ctx.audit.log("ingest_end", f"browser_history_count={len(ctx.history)}")
     return ctx
 

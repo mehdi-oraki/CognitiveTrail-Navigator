@@ -15,7 +15,7 @@ CognitiveTrail Navigator is a local-first assistant scaffolded to run as a LangG
 - Ensure Git respects the global ignore file: `git config core.excludesFile .gitignore_global.txt`.
 
 # 4. Usage (MVP CLI)
-- Run the pipeline: `python -m src.cli fetch-history --limit 100 --browsers chrome firefox edge`.
+- Run the pipeline: `python -m src.cli fetch-history --browsers chrome firefox edge`. The CLI will always prompt you to enter a data limit (`today`, `last week`, `last month`, or `1 year`); passing `--time-window` simply sets the default option shown in the prompt.
 - The CLI will prompt for explicit consent before accessing each data source (Gmail, filesystem, browser history). If you decline, the step is skipped.
 - On success, you will see a summary like `Data fetch complete — N entries saved.`.
 
