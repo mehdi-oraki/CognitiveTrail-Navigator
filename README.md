@@ -11,6 +11,7 @@
 - [Development & Testing](#9-development--testing)
 - [Troubleshooting](#10-troubleshooting)
 - [Roadmap](#11-roadmap)
+- [License](#12-license)
 
 # 2. Overview
 CognitiveTrail Navigator is a local-first assistant scaffolded as a LangGraph-style pipeline. It emphasizes explicit user consent, read-only data access, and local storage (SQLite/CSV). No data leaves your machine unless you extend it to do so.
@@ -68,3 +69,6 @@ CognitiveTrail Navigator is a local-first assistant scaffolded as a LangGraph-st
 - Add Gmail read-only OAuth agent with restricted scopes.
 - Enrich history entries with optional IP/geo hints if locally available.
 - Replace the linear list pipeline with a full LangGraph graph and add automated tests.
+
+# 12. License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
