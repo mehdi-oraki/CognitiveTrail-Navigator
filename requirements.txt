@@ -1,2 +1,5 @@
-# Stdlib-only for now; add packages here when enabling Gmail OAuth or richer UI.
+# Dependencies for CognitiveTrail Navigator
 
+llama-index>=0.10.0
+llama-index-llms-huggingface>=0.1.0
+llama-index-llms-ollama>=0.1.0

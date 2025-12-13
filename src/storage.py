@@ -99,6 +99,7 @@ class LocalStore:
         self._append_csv(rows)
         self._write_html()
         self._write_analysis_html()
+        self._export_graph_data_json()
         return len(rows)
 
     def _append_csv(self, rows: List[BrowserEntry]) -> None:
@@ -618,6 +619,33 @@ class LocalStore:
 
         with self.analysis_path.open("w", encoding="utf-8") as handle:
             handle.write(html_doc)
+
+    def _export_graph_data_json(self) -> None:
+        """Export graph data as JSON for LLM analysis."""
+        import json
+        subdomains, tlds, dow_by_subdomain, dow_total = self._aggregate_domains()
+        
+        # Format day-of-week data for selected subdomains (top 20)
+        all_subdomains = subdomains.most_common(20)
+        dow_data = {}
+        dow_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        
+        for subdomain, count in all_subdomains:
+            dow_counts = [dow_by_subdomain.get(subdomain, Counter()).get(i, 0) for i in range(7)]
+            dow_data[subdomain] = {
+                "total_visits": count,
+                "day_of_week": {dow_labels[i]: dow_counts[i] for i in range(7)}
+            }
+        
+        graph_data = {
+            "selected_subdomains_by_day_of_week": dow_data,
+            "day_of_week_totals": {dow_labels[i]: dow_total.get(i, 0) for i in range(7)},
+            "top_subdomains": [{"subdomain": sub, "count": cnt} for sub, cnt in all_subdomains]
+        }
+        
+        graph_json_path = DATA_DIR / "graph_data.json"
+        with graph_json_path.open("w", encoding="utf-8") as handle:
+            json.dump(graph_data, handle, indent=2)
 
 
 class AuditLogger:

@@ -16,6 +16,11 @@ def prompt_yes_no(question: str) -> bool:
         print("Please answer with 'y' or 'n'.")
 
 
+def prompt_llamaindex_analysis() -> bool:
+    """Prompt user if they want to analyze browser history using LlamaIndex."""
+    return prompt_yes_no("Do you want to analyze browser history more precisely using LlamaIndex?")
+
+
 def collect_consents(audit: AuditLogger) -> Dict[str, bool]:
     """Ask for explicit consent per resource."""
     prompts = {
