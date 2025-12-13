@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cognitive-trail-navigator
+    volumes:
+      # Mount data directory for persistence
+      - ./data:/app/data
+      # Mount browser history if running on Linux (adjust paths as needed)
+      - /home:/home:ro
+      - /mnt/c:/mnt/c:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_TOKEN=${HF_TOKEN:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-localhost:11434}
+    # Uncomment if you want to connect to host's Ollama
+    # network_mode: "host"
+    stdin_open: true
+    tty: true
+    command: python -m src.cli fetch-history
+
+  # Optional: Ollama service (uncomment if you want to run Ollama in Docker)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: cognitive-trail-ollama
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   restart: unless-stopped
+
+# volumes:
+#   ollama-data:
+

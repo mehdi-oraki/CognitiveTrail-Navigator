@@ -1,13 +1,53 @@
+# Data directory
 data/
 tokens/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Database files
 *.sqlite
 *.sqlite3
 *.db
 *.db-journal
-*.csv
+
+# Logs and outputs
 *.log
-.venv/
-__pycache__/
+*.csv
+*.html
+graph_data.json
+llm_analysis.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 .python-version
 
+# Environment
+.env
+.env.local
 
+# Docker
+.dockerignore.bak

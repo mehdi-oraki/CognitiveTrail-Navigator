@@ -1,5 +1,6 @@
 # Dependencies for CognitiveTrail Navigator
 
+# Core LLM Framework
 llama-index>=0.10.0
 llama-index-llms-huggingface>=0.1.0
 llama-index-llms-ollama>=0.1.0
